@@ -308,7 +308,7 @@ func (m *MigrationController) migrateVolumes(migration *stork_api.Migration, ter
 			return err
 		}
 		if volumeInfos == nil {
-			volumeInfos = make([]*stork_api.VolumeInfo, 0)
+			volumeInfos = make([]*stork_api.MigrationVolumeInfo, 0)
 		}
 		migration.Status.Volumes = volumeInfos
 		migration.Status.Status = stork_api.MigrationStatusInProgress
@@ -360,7 +360,7 @@ func (m *MigrationController) migrateVolumes(migration *stork_api.Migration, ter
 			return err
 		}
 		if volumeInfos == nil {
-			volumeInfos = make([]*stork_api.VolumeInfo, 0)
+			volumeInfos = make([]*stork_api.MigrationVolumeInfo, 0)
 		}
 		migration.Status.Volumes = volumeInfos
 		// Store the new status
@@ -516,14 +516,14 @@ func (m *MigrationController) migrateResources(migration *stork_api.Migration) e
 	}
 
 	// Save the collected resources infos in the status
-	resourceInfos := make([]*stork_api.ResourceInfo, 0)
+	resourceInfos := make([]*stork_api.MigrationResourceInfo, 0)
 	for _, obj := range allObjects {
 		metadata, err := meta.Accessor(obj)
 		if err != nil {
 			return err
 		}
 
-		resourceInfo := &stork_api.ResourceInfo{
+		resourceInfo := &stork_api.MigrationResourceInfo{
 			Name:      metadata.GetName(),
 			Namespace: metadata.GetNamespace(),
 			Status:    stork_api.MigrationStatusInProgress,
