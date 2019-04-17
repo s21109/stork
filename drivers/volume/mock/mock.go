@@ -35,6 +35,7 @@ type Driver struct {
 	storkvolume.MigrationNotSupported
 	storkvolume.GroupSnapshotNotSupported
 	storkvolume.ClusterDomainsNotSupported
+	storkvolume.BackupNotSupported
 	nodes          []*storkvolume.NodeInfo
 	volumes        map[string]*storkvolume.Info
 	pvcs           map[string]*v1.PersistentVolumeClaim

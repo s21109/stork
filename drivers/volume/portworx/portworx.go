@@ -169,6 +169,7 @@ type portworx struct {
 	endpoint        string
 	jwtSharedSecret string
 	authSecrets     auth_secrets.Auth
+	storkvolume.BackupNotSupported
 }
 
 type portworxGrpcConnection struct {

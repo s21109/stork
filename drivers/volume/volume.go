@@ -66,6 +66,8 @@ type Driver interface {
 	MigratePluginInterface
 	// ClusterDomainsPluginInterface Interface to manage cluster domains
 	ClusterDomainsPluginInterface
+	// BackupPluginInterface Interface to backup and restore volumes
+	BackupPluginInterface
 }
 
 // GroupSnapshotCreateResponse is the response for the group snapshot operation
@@ -114,6 +116,18 @@ type ClusterDomainsPluginInterface interface {
 	ActivateClusterDomain(*stork_crd.ClusterDomainUpdate) error
 	// DeactivateClusterDomain deactivates a cluster domain
 	DeactivateClusterDomain(*stork_crd.ClusterDomainUpdate) error
+}
+
+// BackupPluginInterface Interface to backup and restore volumes
+type BackupPluginInterface interface {
+	// Start backup of volumes specified by the spec. Should only backup
+	// volumes, not the specs associated with them
+	StartBackup(*stork_crd.ApplicationBackup) ([]*stork_crd.ApplicationBackupVolumeInfo, error)
+	// Get the status of backup of the volumes specified in the status
+	// for the backup spec
+	GetBackupStatus(*stork_crd.ApplicationBackup) ([]*stork_crd.ApplicationBackupVolumeInfo, error)
+	// Cancel the backup of volumes specified in the status
+	CancelBackup(*stork_crd.ApplicationBackup) error
 }
 
 // Info Information about a volume
@@ -260,6 +274,24 @@ func (c *ClusterDomainsNotSupported) ActivateClusterDomain(*stork_crd.ClusterDom
 
 // DeactivateClusterDomain deactivates a cluster domain
 func (c *ClusterDomainsNotSupported) DeactivateClusterDomain(*stork_crd.ClusterDomainUpdate) error {
+	return &errors.ErrNotSupported{}
+}
+
+// BackupNotSupported to be used by drivers that don't support backup
+type BackupNotSupported struct{}
+
+// StartBackup returns ErrNotSupported
+func (b *BackupNotSupported) StartBackup(*stork_crd.ApplicationBackup) ([]*stork_crd.ApplicationBackupVolumeInfo, error) {
+	return nil, &errors.ErrNotSupported{}
+}
+
+// GetBackupStatus returns ErrNotSupported
+func (b *BackupNotSupported) GetBackupStatus(*stork_crd.ApplicationBackup) ([]*stork_crd.ApplicationBackupVolumeInfo, error) {
+	return nil, &errors.ErrNotSupported{}
+}
+
+// CancelBackup returns ErrNotSupported
+func (b *BackupNotSupported) CancelBackup(*stork_crd.ApplicationBackup) error {
 	return &errors.ErrNotSupported{}
 }
 
