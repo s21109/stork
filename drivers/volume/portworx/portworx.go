@@ -169,7 +169,6 @@ type portworx struct {
 	endpoint        string
 	jwtSharedSecret string
 	authSecrets     auth_secrets.Auth
-	storkvolume.BackupNotSupported
 }
 
 type portworxGrpcConnection struct {
@@ -1477,14 +1476,15 @@ func (p *portworx) StartMigration(migration *stork_crd.Migration) ([]*stork_crd.
 			if !p.OwnsPVC(&pvc) {
 				continue
 			}
-			volumeInfo := &stork_crd.MigrationVolumeInfo{}
-			volumeInfo.PersistentVolumeClaim = pvc.Name
-			volumeInfo.Namespace = pvc.Namespace
+			volumeInfo := &stork_crd.MigrationVolumeInfo{
+				PersistentVolumeClaim: pvc.Name,
+				Namespace:             pvc.Namespace,
+			}
 			volumeInfos = append(volumeInfos, volumeInfo)
 
 			volume, err := k8s.Instance().GetVolumeForPersistentVolumeClaim(&pvc)
 			if err != nil {
-				return nil, fmt.Errorf("Error getting volume for PVC: %v", err)
+				return nil, fmt.Errorf("error getting volume for PVC: %v", err)
 			}
 			volumeInfo.Volume = volume
 			taskID := p.getMigrationTaskID(migration, volumeInfo)
@@ -1496,7 +1496,7 @@ func (p *portworx) StartMigration(migration *stork_crd.Migration) ([]*stork_crd.
 			})
 			if err != nil {
 				if _, ok := err.(*ost_errors.ErrExists); !ok {
-					return nil, fmt.Errorf("Error starting migration for volume: %v", err)
+					return nil, fmt.Errorf("error starting migration for volume: %v", err)
 				}
 			}
 			volumeInfo.Status = stork_crd.MigrationStatusInProgress
@@ -1509,6 +1509,14 @@ func (p *portworx) StartMigration(migration *stork_crd.Migration) ([]*stork_crd.
 
 func (p *portworx) getMigrationTaskID(migration *stork_crd.Migration, volumeInfo *stork_crd.MigrationVolumeInfo) string {
 	return string(migration.UID) + "-" + volumeInfo.Namespace + "-" + volumeInfo.PersistentVolumeClaim
+}
+
+func (p *portworx) getBackupTaskID(backup *stork_crd.ApplicationBackup, volumeInfo *stork_crd.ApplicationBackupVolumeInfo) string {
+	return string(backup.UID) + "-" + volumeInfo.Namespace + "-" + volumeInfo.PersistentVolumeClaim
+}
+
+func (p *portworx) getCredID(backup *stork_crd.ApplicationBackup) string {
+	return "k8s/" + backup.Namespace + "/" + backup.Spec.BackupLocation
 }
 
 func (p *portworx) GetMigrationStatus(migration *stork_crd.Migration) ([]*stork_crd.MigrationVolumeInfo, error) {
@@ -1752,6 +1760,79 @@ func (p *portworx) DeactivateClusterDomain(cdu *stork_crd.ClusterDomainUpdate) e
 		ClusterDomainName: cdu.Spec.ClusterDomain,
 	})
 	return err
+}
+
+func (p *portworx) StartBackup(backup *stork_crd.ApplicationBackup) ([]*stork_crd.ApplicationBackupVolumeInfo, error) {
+	volDriver, err := p.getUserVolDriver(backup.Annotations)
+	if err != nil {
+		return nil, err
+	}
+	volumeInfos := make([]*stork_crd.ApplicationBackupVolumeInfo, 0)
+	for _, namespace := range backup.Spec.Namespaces {
+		pvcList, err := k8s.Instance().GetPersistentVolumeClaims(namespace, backup.Spec.Selectors)
+		if err != nil {
+			return nil, fmt.Errorf("error getting list of volumes to migrate: %v", err)
+		}
+		for _, pvc := range pvcList.Items {
+			if !p.OwnsPVC(&pvc) {
+				continue
+			}
+			volumeInfo := &stork_crd.ApplicationBackupVolumeInfo{}
+			volumeInfo.PersistentVolumeClaim = pvc.Name
+			volumeInfo.Namespace = pvc.Namespace
+			volumeInfos = append(volumeInfos, volumeInfo)
+
+			volume, err := k8s.Instance().GetVolumeForPersistentVolumeClaim(&pvc)
+			if err != nil {
+				return nil, fmt.Errorf("Error getting volume for PVC: %v", err)
+			}
+			volumeInfo.Volume = volume
+			taskID := p.getBackupTaskID(backup, volumeInfo)
+			credID := p.getCredID(backup)
+			request := &api.CloudBackupCreateRequest{
+				VolumeID:       volume,
+				CredentialUUID: credID,
+				Name:           taskID,
+			}
+			request.Labels = make(map[string]string)
+			//request.Labels[cloudBackupOwnerLabel] = "stork"
+
+			_, err = volDriver.CloudBackupCreate(request)
+			if err != nil {
+				if _, ok := err.(*ost_errors.ErrExists); !ok {
+					return nil, err
+				}
+			}
+		}
+	}
+	return volumeInfos, nil
+}
+
+func (p *portworx) GetBackupStatus(backup *stork_crd.ApplicationBackup) ([]*stork_crd.ApplicationBackupVolumeInfo, error) {
+	volDriver, err := p.getUserVolDriver(backup.Annotations)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, vInfo := range backup.Status.Volumes {
+		taskID := p.getBackupTaskID(backup, vInfo)
+		csStatus := p.getCloudSnapStatus(volDriver, api.CloudBackupOp, taskID)
+		if isCloudsnapStatusActive(csStatus.status) {
+			vInfo.Reason = "Volume backup in progress"
+		} else if isCloudsnapStatusFailed(csStatus.status) {
+			vInfo.Status = stork_crd.ApplicationBackupStatusFailed
+			vInfo.Reason = fmt.Sprintf("Backup failed for volume: %v", csStatus.msg)
+		} else {
+			vInfo.Status = stork_crd.ApplicationBackupStatusSuccessful
+			vInfo.Reason = fmt.Sprintf("Backup successful for volume")
+		}
+	}
+
+	return backup.Status.Volumes, nil
+}
+
+func (p *portworx) CancelBackup(backup *stork_crd.ApplicationBackup) error {
+	return &errors.ErrNotSupported{}
 }
 
 func (p *portworx) createGroupLocalSnapFromPVCs(groupSnap *stork_crd.GroupVolumeSnapshot, volNames []string, options map[string]string) (
@@ -2022,6 +2103,12 @@ func isCloudsnapStatusFailed(st api.CloudBackupStatusType) bool {
 	return st == api.CloudBackupStatusFailed ||
 		st == api.CloudBackupStatusStopped ||
 		st == api.CloudBackupStatusAborted
+}
+
+func isCloudsnapStatusActive(st api.CloudBackupStatusType) bool {
+	return isCloudsnapStatusFailed(st) || st == api.CloudBackupStatusNotStarted ||
+		st == api.CloudBackupStatusQueued ||
+		st == api.CloudBackupStatusPaused
 }
 
 func init() {

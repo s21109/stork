@@ -85,6 +85,7 @@ type Ops interface {
 	ObjectOps
 	SchedulePolicyOps
 	VolumePlacementStrategyOps
+	ApplicationBackupOps
 	GetVersion() (*version.Info, error)
 	SetConfig(config *rest.Config)
 	SetClient(client kubernetes.Interface, snapClient rest.Interface, storkClient storkclientset.Interface, apiExtensionClient apiextensionsclient.Interface, dynamicInterface dynamic.Interface)
@@ -598,6 +599,20 @@ type VolumePlacementStrategyOps interface {
 	DeleteVolumePlacementStrategy(name string) error
 	// GetVolumePlacementStrategy returns the volume placememt strategy with given name
 	GetVolumePlacementStrategy(name string) (*talisman_v1beta1.VolumePlacementStrategy, error)
+}
+
+// ApplicationBackupOps is an interface to perfrom k8s ApplicationBackup operations
+type ApplicationBackupOps interface {
+	// CreateApplicationBackup creates the ApplicationBackup
+	CreateApplicationBackup(*v1alpha1.ApplicationBackup) (*v1alpha1.ApplicationBackup, error)
+	// GetApplicationBackup gets the ApplicationBackup
+	GetApplicationBackup(string, string) (*v1alpha1.ApplicationBackup, error)
+	// ListApplicationBackups lists all the ApplicationBackups
+	ListApplicationBackups(string) (*v1alpha1.ApplicationBackupList, error)
+	// UpdateApplicationBackup updates the ApplicationBackup
+	UpdateApplicationBackup(*v1alpha1.ApplicationBackup) (*v1alpha1.ApplicationBackup, error)
+	// DeleteApplicationBackup deletes the ApplicationBackup
+	DeleteApplicationBackup(string, string) error
 }
 
 type privateMethods interface {
@@ -4010,7 +4025,53 @@ func (k *k8sOps) UpdateObject(object runtime.Object) (runtime.Object, error) {
 	return client.Update(unstructured, "")
 }
 
-// Object APIs - BEGIN
+// Object APIs - END
+
+// ApplicationBackup APIs - BEGIN
+
+func (k *k8sOps) GetApplicationBackup(name string, namespace string) (*v1alpha1.ApplicationBackup, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationBackups(namespace).Get(name, meta_v1.GetOptions{})
+}
+
+func (k *k8sOps) ListApplicationBackups(namespace string) (*v1alpha1.ApplicationBackupList, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationBackups(namespace).List(meta_v1.ListOptions{})
+}
+
+func (k *k8sOps) CreateApplicationBackup(backup *v1alpha1.ApplicationBackup) (*v1alpha1.ApplicationBackup, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationBackups(backup.Namespace).Create(backup)
+}
+
+func (k *k8sOps) DeleteApplicationBackup(name string, namespace string) error {
+	if err := k.initK8sClient(); err != nil {
+		return err
+	}
+
+	return k.storkClient.Stork().ApplicationBackups(namespace).Delete(name, &meta_v1.DeleteOptions{
+		PropagationPolicy: &deleteForegroundPolicy,
+	})
+}
+
+func (k *k8sOps) UpdateApplicationBackup(backup *v1alpha1.ApplicationBackup) (*v1alpha1.ApplicationBackup, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationBackups(backup.Namespace).Update(backup)
+}
+
+// ApplicationBackup APIs - END
 
 func (k *k8sOps) appsClient() v1beta2.AppsV1beta2Interface {
 	return k.client.AppsV1beta2()

@@ -204,3 +204,15 @@ func PVCLog(pvc *v1.PersistentVolumeClaim) *logrus.Entry {
 
 	return logrus.WithFields(logrus.Fields{})
 }
+
+// ApplicationBackupLog formats a log message with applicationbackup information
+func ApplicationBackupLog(backup *storkv1.ApplicationBackup) *logrus.Entry {
+	if backup != nil {
+		return logrus.WithFields(logrus.Fields{
+			"ApplicationBackupName":      backup.Name,
+			"ApplicationBackupNamespace": backup.Namespace,
+		})
+	}
+
+	return logrus.WithFields(logrus.Fields{})
+}
